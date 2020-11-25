@@ -5,6 +5,7 @@ import datetime
 from dateutil.parser import parse
 import csv
 import numpy as np
+from collections import Counter
 
 
 def get_tickers():
@@ -20,7 +21,7 @@ def get_driver():
     driver.get(url)
     return driver
 
-def get_link():
+def get_link(driver):
     yesterday = datetime.date.today() - timedelta(days=1)
     driver = get_driver()
     links = driver.find_elements_by_xpath('//*[@class="_eYtD2XCVieq6emjKBH3m"]')
@@ -44,22 +45,64 @@ def get_link():
 
             elif parse(str(yesterday)) == parse(str(saturday)):
                 link = a.find_element_by_xpath('../..').get_attribute('href')
-    driver.close()
-    return link
-
-def get_raw_comment_list():
-    link = get_link()
     stock_link = link.split('/')[-3]
+    driver.close()
+    return stock_link
+
+def get_raw_comment_list(stock_link):
     html = requests.get(f'https://api.pushshift.io/reddit/submission/comment_ids/{stock_link}')
     raw_comment_list = html.json()
     return raw_comment_list
 
-def get_comments():
-    raw_comment_list = get_raw_comment_list()
+def get_comment_list(raw_comment_list):
     orig_list = np.array(raw_comment_list['data'])
     comment_list = ",".join(orig_list[0:1000])
-    html = requests.get(f'https://api.pushshift.io/reddit/comment/search?ids{comment_list}&fields=body&size=1000')
-    newcomments = html.json()
-    return newcomments
+    return comment_list
 
-print(get_comments())
+def get_comments(comment_list):
+    html = requests.get(f'https://api.pushshift.io/reddit/comment/search?ids{comment_list}&fields=body&size=1000')
+    new_comments = html.json()
+    return new_comments
+
+def get_stock_list(new_comments, tickers):
+    stock_dict = Counter()
+    for a in new_comments['data']:
+        for ticker in tickers:
+            if ticker in a['body']:
+                stock_dict[ticker] += 1
+    return stock_dict
+
+def count(stock_dict, raw_comment_list):
+    orig_list = np.array(raw_comment_list['data'])
+    remove_me = slice(0, 1000)
+    cleaned = np.delete(orig_list, remove_me)
+    tickers = get_tickers()
+    i = 0
+    while i < len(cleaned):
+        print(len(cleaned))
+        cleaned = np.delete(cleaned, remove_me)
+        new_comments_list = ",".join(cleaned[0:1000])
+        new_comments = get_comments(new_comments_list)
+        get_stock_list(new_comments, tickers)
+    stock = dict(stock_dict)
+    return stock
+
+def write(stock):
+    data = list(zip(sorted(stock.keys()), sorted(stock.values())))
+    with open('stock.csv', 'w') as w:
+        writer = csv.writer(w, lineterminator='\n')
+        writer.writerow(['Stock', 'Number of Mentions'])
+        for a in data:
+            writer.writerow(a)
+
+if __name__ == "__main__":
+    driver = get_driver()
+    stock_link = get_link(driver)
+    raw_comment_list = get_raw_comment_list(stock_link)
+    tickers = get_tickers()
+    comment_list = get_comment_list(raw_comment_list)
+    new_comments = get_comments(comment_list)
+    stock_dict = get_stock_list(new_comments, tickers)
+    stock = count(stock_dict, raw_comment_list)
+    write(stock)
+
