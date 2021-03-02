@@ -1,2 +1,2 @@
 # wsbscraper
-# webscraping r/wallstreetbets for stock prediction
+# webscraping r/wallstreetbets for stock sentiment
